@@ -23,6 +23,7 @@ use Getopt::Long;
 our ($DBH, $SV, $SERVER, $DATABASE, $USERNAME, $PASSWORD, $VERBOSE, $INTERVAL);
 $DATABASE = 'apache';
 $USERNAME = 'apache';
+$SERVER = 'localhost';
 $VERBOSE = 1;
 
 # Interval is the number of minutes in which we will be sending reports
@@ -164,7 +165,7 @@ sub initDB{
 	if ($schema_version == 1) {
 			$sth = $DBH->prepare(
 				"CREATE TABLE reporting (
-					`` VARCHAR(255) NOT NULL,
+					`vhost` VARCHAR(255) NOT NULL,
 					`time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 					PRIMARY KEY (`vhost`)
 			)");
