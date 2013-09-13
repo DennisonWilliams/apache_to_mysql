@@ -67,6 +67,7 @@ elsif ($REPORT) {
 # A statement handler to add log entries to the database
 # We will be using this log directive:
 # LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" ::: %{mod_php_memory_usage}n %D %O %v %U %q" combined-php
+# LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" ::: %{forensic-id}n %{mod_php_memory_usage}n %D %O http://%v%U%q" combined-php-forensics
 # 127.0.0.1 - - [14/Dec/2012:14:56:58 -0500] "OPTIONS * HTTP/1.0" 200 - "-" "Apache/2.4.3 (Unix) OpenSSL/1.0.1c PHP/5.4.7 (internal dummy connection)" ::: - 1256 148 ushahidi-fresh.march-hare.org *
 # %h - Remote Host
 # %u - Remote user (from auth; may be bogus if return status (%s) is 401)
@@ -125,7 +126,10 @@ while (<STDIN>) {
 	$servername = $7;
 	$url = ($8 && ($8 ne '*'))?$8:'';
 	$params = $9;
-	print "$_\n\$remote_host =>$remote_host\n\$time => $time\n\$servername => $servername\n\$tts => $tts\n\$size => $size\n\$url => $url\n\$params => $params\n\$memory => $memory\n\n";
+	print "$_\n\$remote_host =>$remote_host\n\$time => $time\n".
+          "\$servername => $servername\n\$tts => $tts\n\$size => $size\n".
+          "\$url => $url\n\$params => $params\n\$memory => $memory\n\n"
+          if $VERBOSE;
 	$sth->execute($remote_host, $time, $servername, $tts, $size, $url, $params, $memory);
 }
 
