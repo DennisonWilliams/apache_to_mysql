@@ -43,8 +43,8 @@ my $result = GetOptions (
 	"vhost=s"    => \$VHOST, # string
 	"limit=i"    => \$LIMIT, # integer
 	"report"     => \$REPORT,
-        "format=s" => \$FORMAT,
-	"verbose"    => \$VERBOSE); # flag
+  "format=s"   => \$FORMAT,
+	"verbose+"    => \$VERBOSE); # flag
 
 # Schema version.  Increment this each time there is a change to the DB schema,
 # include the appropriate update code in the update method, and update the 
@@ -81,6 +81,10 @@ while (<STDIN>) {
     ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params) = parse_combined_php($_);
   } elsif ($FORMAT eq 'combined-php-forensics') {
     ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params) = parse_combined_php_forensics($_);
+		next if ($VERBOSE > 1);
+  } elsif ($FORMAT eq 'combined-php-forensics-ee') {
+    ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params) = parse_combined_php_forensics_ee($_);
+		next if ($VERBOSE > 1);
   }
   $sth->execute($remote_host, $time, $servername, $tts, $size, $url, $params, $memory);
 }
@@ -367,7 +371,7 @@ sub parse_combined_php_forensics {
   my ($line) = @_;
   # pull in fields of interest from a RE
   $line =~ /
-          ([^\s]+)						# %h - Remote Host
+          ([^\s]+)						# %h - Remote Host, $1
           \s
           (?:[^\s]+\s){2}			# %l %u
           \[([^\]]+)\]				# %t - Time the request was recieved, $2
@@ -402,6 +406,78 @@ sub parse_combined_php_forensics {
   my $params = '';
   if ($url =~ /http:\/\/([^\/]*)(?:\/([^?]*)(?:\?(.*))?)?/) {
     $servername = $1;
+    $url = $2;
+    $params = $3;
+  }
+  print "$_\n\$remote_host =>$remote_host\n\$time => $time\n".
+    "\$servername => $servername\n\$tts => $tts\n\$size => $size\n".
+    "\$url => $url\n\$params => $params\n\$memory => $memory\n\n"
+    if $VERBOSE;
+  return ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params);
+}
+
+# We will be using this log directive:
+# LogFormat "%h %l %u %v %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" ::: %{forensic-id}n %{mod_php_memory_usage}n %D %O http://%v%U%q" combined-php
+# 157.55.34.29 - - speakoutnow.org [19/Sep/2013:00:00:09 -0700] "GET /melanie-demore-performs-at-911-memorial-concert HTTP/1.1" 302 - "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" ::: Ujqg@dBa12IAAQSVEL0AAAAF 15466496 163644 364 http://speakoutnow.org/melanie-demore-performs-at-911-memorial-concert?q_url=melanie-demore-performs-at-911-memorial-concert
+# %h - Remote Host
+# %l - Remote logname (from identd, if supplied). This will return a dash unless mod_ident is present and IdentityCheck is set On.
+# %u - Remote user (from auth; may be bogus if return status (%s) is 401)
+# %v - Vhost name
+# %t - Time the request was received (standard english format)
+# "%r" - First line of request
+# %>s - Status. For requests that got internally redirected, this is the status of the *original* request --- %>s for the last.
+# %b - Size of response in bytes, excluding HTTP headers. In CLF format, i.e. a '-' rather than a 0 when no bytes are sent.
+# %{Referer}i - The Referer header from the client
+# %{User-Agent}i - The User-Agent header ffrom the client
+# %{forensic-id}n - The unique forensics id assigned by mod_forensics
+# %{mod_php_memory_usage}n - The amount of memory used by php
+# %D - The time taken to serve the request, in microseconds.
+# %O - Bytes sent, including headers, cannot be zero. You need to enable mod_logio to use this.
+# http://%v%U%q - A string representing the requested url where:
+#   %v - vhost
+#   %U - url
+#   %q - query string
+sub parse_combined_php_forensics_ee {
+  my ($line) = @_;
+  # pull in fields of interest from a RE
+  $line =~ /
+          ([^\s]+)						# %h - Remote Host, $1
+          \s
+          (?:[^\s]+\s){2}			# %l %u
+					([^\s]+)            # %v $2
+					\s
+          \[([^\]]+)\]				# %t - Time the request was recieved, $3
+          \s
+          "[^\"]+"						# %r - First line of request
+          \s
+          (?:[^\s]+)					# %>s - Status
+          \s
+          ([^\s]+)						# %b - Size of response, $4
+          .*\s:::							# Everything up to the ':::' divider
+          
+          (?:
+                  \s
+                  [^\s]+					# %{forensic-id}n
+                  \s
+                  ([^\s]+)					# %{mod_php_memory_usage}n, $5
+                  \s
+                  ([^\s]+)					# %D - tts, $6
+                  \s
+                  ([^\s]+)					# %O - bytes sent, $7
+                  \s
+                  ([^\s]+)					# http:FOO, $8
+          )?								# This whole section may not exist
+  /x or next;
+  my $remote_host = $1;
+  my $time = strftime "%F %H:%M:%S", localtime($lang->str2time($3));
+  my $memory = ($5 eq "-")?'':$5;
+  my $tts = $6;
+  my $size = ($7 && ($7 ne "-"))?$7:$4;
+  my $url = $8;
+  my $servername = $2;
+  my $params = '';
+  if ($url =~ /http:\/\/([^\/]*)(?:\/([^?]*)(?:\?(.*))?)?/) {
+    #$servername = $1;
     $url = $2;
     $params = $3;
   }
