@@ -6,6 +6,8 @@ use Date::Parse;
 use Date::Language;
 use POSIX qw(strftime);
 use Getopt::Long;
+use Cwd 'cwd';
+use Data::Dumper;
 use RRD::Simple;
 
 our ($DBH, $SV, $SERVER, $DATABASE, $USERNAME, $PASSWORD, $VERBOSE, $SERVERNAME, $VHOST);
@@ -55,13 +57,13 @@ $DBH = DBI->connect("DBI:mysql:$DATABASE;host=$SERVER", $USERNAME, $PASSWORD)
 # Build the query
 my $query = 'SELECT memory FROM logentries';
 
-$query .= 'LEFT JOIN server ON (logentries.id = server.logentry_id)';
+$query .= 'LEFT JOIN server ON (logentries.id = server.logentry_id)'
 	if ($SERVERNAME);
 
-$query .=	'WHERE time > ? and time < ? '.
+$query .=	' WHERE time > ? and time < ? '.
 	'AND server_name = ?';
 
-$query .= ' WHERE server.name = ?'
+$query .= " AND server.name = '$SERVERNAME'"
 	if ($SERVERNAME);
 
 $query .= ' limit '. $LIMIT
@@ -69,11 +71,16 @@ $query .= ' limit '. $LIMIT
 
 my $sth = $DBH->prepare($query);
 
-my $rrd = RRD::Simple->new( file => "$SERVERNAME.$VHOST.rrd" );
-$rrd->create(
-  Memory => "GAUGE",
-  Requests => "GAUGE"
-);
+my $fname = "$$.$VHOST.";
+if ($SERVERNAME) {
+  $fname = "$SERVERNAME.$VHOST.";
+} 
+
+my $rrdMem = RRD::Simple->new( file => $fname ."memory.rrd" );
+$rrdMem->create( Memory => "GAUGE");
+
+my $rrdReq = RRD::Simple->new( file => $fname ."requests.rrd" );
+$rrdReq->create( Requests => "GAUGE");
 
 my $curtime = $STARTTIME;
 
@@ -83,23 +90,50 @@ while ($curtime < $ENDTIME) {
 	my $endinterval = $curtime + 60*5;
 	my $requests = 0;
 	my $memory = 0;
-	if ($SERVERNAME) {
-		$sth->execute($curtime, $endinterval, $SERVERNAME, $VHOST);
-	} else {
-		$sth->execute($curtime, $endinterval, $VHOST);
-	}
+
+	my $sCurtime = strftime("%F %H:%M:%S", localtime($curtime));
+	my $sEndinterval = strftime("%F %H:%M:%S", localtime($endinterval));
+	print "$query => ($sCurtime, $sEndinterval, $VHOST)\n"
+		if ($VERBOSE > 1);
+	$sth->execute($sCurtime, $sEndinterval, $VHOST);
+
 	while (my $le = $sth->fetchrow_hashref()) {
 		$requests++;
+		print "$requests: ". $le->{memory} ."\n"
+			if ($VERBOSE > 1);
 		$memory += $le->{memory} ? $le->{memory} : $DEFAULTMEM;
 	}
 
-	$rrd->update("$SERVERNAME.$VHOST.rrd", $endinterval,
-		Memory => $memory,
-		Requests => $requests
-	);
+	print "Update [". strftime("%F %H:%M:%S", localtime($endinterval)) 
+		."] => Requests: $requests, Memory: $memory\n"
+		if $VERBOSE;
+	$rrdMem->update($fname .'memory.rrd', $endinterval, Memory => $memory);
+	$rrdReq->update($fname .'requests.rrd', $endinterval, Requests => $requests);
 
 	$curtime = $endinterval;
 }
+
+#TODO: this needs to be configured to use the time frame specified on the command line
+# Generate graphs:
+# /var/tmp/myfile-daily.png, /var/tmp/myfile-weekly.png
+# /var/tmp/myfile-monthly.png, /var/tmp/myfile-annual.png
+my %rtn = $rrdMem->graph(
+	destination => cwd(),
+	title => "Memory usage for ". $VHOST . ($SERVERNAME?" on $SERVERNAME":''),
+	vertical_label => "Bytes",
+	interlaced => ""
+);
+printf("Created %s\n",join(", ",map { $rtn{$_}->[0] } keys %rtn))
+	if $VERBOSE;
+
+%rtn = $rrdReq->graph(
+	destination => cwd(),
+	title => "Requests for ". $VHOST . ($SERVERNAME?" on $SERVERNAME":''),
+	vertical_label => "Count",
+	interlaced => ""
+);
+printf("Created %s\n",join(", ",map { $rtn{$_}->[0] } keys %rtn))
+	if $VERBOSE;
 
 sub usage {
 print <<END;
@@ -108,7 +142,7 @@ Generate an RRD file containing memory and number of requests in 5 min
 intervals from the apache database (populated by apache_to_mysql.pl).
 
 --servername        : The hostname of the server that the vhost is on
---vhostname         : The name of the vhost we are interested in
+--vhost             : The name of the vhost we are interested in
 --database          : Name of the database to use [default: apache]
 --username          : The username to connect to the database with [default:
                     apache]
