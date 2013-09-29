@@ -24,7 +24,7 @@ our ($DBH, $SV, $SERVER, $DATABASE, $USERNAME, $PASSWORD, $VERBOSE, $INTERVAL, $
 $DATABASE = 'apache';
 $USERNAME = 'apache';
 $SERVER = 'localhost';
-$VERBOSE = 1;
+$VERBOSE = 0;
 $FORMAT = 'combined-php';
 
 # Interval is the number of minutes in which we will be sending reports
@@ -135,7 +135,27 @@ sub initDB{
 			$sth = $DBH->prepare("UPDATE variables SET `value`=? where `key`=?");
 			$sth->execute(2, 'schema_version');
 			$schema_version = 2;
-	}
+	} elsif ($schema_version == 2) {
+          $sth = $DBH->prepare( "ALTER TABLE logentries DROP KEY remote_host" );
+          $sth->execute();
+          $sth->finish();
+
+          $sth = $DBH->prepare( "alter table logentries add key remote_host (remote_host)" );
+          $sth->execute();
+          $sth->finish();
+
+          $sth = $DBH->prepare( "alter table logentries add key time (time)" );
+          $sth->execute();
+          $sth->finish();
+
+          $sth = $DBH->prepare( "alter table logentries add key url (url)" );
+          $sth->execute();
+          $sth->finish();
+
+          $sth = $DBH->prepare("UPDATE variables SET `value`=? where `key`=?");
+          $sth->execute(3, 'schema_version');
+          $schema_version = 3;
+        }
 }
 
 sub install {
