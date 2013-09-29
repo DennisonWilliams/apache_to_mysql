@@ -15,14 +15,14 @@ our ($STARTTIME, $ENDTIME, $LIMIT, $HELP);
 $DATABASE = 'apache';
 $USERNAME = 'apache';
 $SERVER = 'localhost';
-$VERBOSE = 1;
+$VERBOSE = 0;
 $STARTTIME = time() - (24*60*60);
 $ENDTIME = time();
 
 # TODO: this should be the general size of an apache process that is not
 # performing some custom php operation, like a file download, and should 
 # be in the same units as %{mod_php_memory_usage}n (bytes)
-my $DEFAULTMEM = '';
+my $DEFAULTMEM = 0;
 
 my $result = GetOptions (
 	"database=s" => \$DATABASE,
@@ -60,8 +60,11 @@ my $query = 'SELECT memory FROM logentries';
 $query .= 'LEFT JOIN server ON (logentries.id = server.logentry_id)'
 	if ($SERVERNAME);
 
-$query .=	' WHERE time > ? and time < ? '.
-	'AND server_name = ?';
+$query .= ' WHERE time > ? and time < ? ';
+
+if ($VHOST != 'ALL') {
+  $query .= 'AND server_name = ?';
+}
 
 $query .= " AND server.name = '$SERVERNAME'"
 	if ($SERVERNAME);
@@ -95,13 +98,17 @@ while ($curtime < $ENDTIME) {
 	my $sEndinterval = strftime("%F %H:%M:%S", localtime($endinterval));
 	print "$query => ($sCurtime, $sEndinterval, $VHOST)\n"
 		if ($VERBOSE > 1);
-	$sth->execute($sCurtime, $sEndinterval, $VHOST);
+        if ($VHOST == 'ALL') {
+          $sth->execute($sCurtime, $sEndinterval);
+        } else {
+          $sth->execute($sCurtime, $sEndinterval, $VHOST);
+        }
 
 	while (my $le = $sth->fetchrow_hashref()) {
 		$requests++;
 		print "$requests: ". $le->{memory} ."\n"
 			if ($VERBOSE > 1);
-		$memory += $le->{memory} ? $le->{memory} : $DEFAULTMEM;
+		$memory += defined($le->{memory}) ? $le->{memory} : $DEFAULTMEM;
 	}
 
 	print "Update [". strftime("%F %H:%M:%S", localtime($endinterval)) 
@@ -121,6 +128,7 @@ my %rtn = $rrdMem->graph(
 	destination => cwd(),
 	title => "Memory usage for ". $VHOST . ($SERVERNAME?" on $SERVERNAME":''),
 	vertical_label => "Bytes",
+        periods => [ qw(week) ],
 	interlaced => ""
 );
 printf("Created %s\n",join(", ",map { $rtn{$_}->[0] } keys %rtn))
@@ -130,6 +138,7 @@ printf("Created %s\n",join(", ",map { $rtn{$_}->[0] } keys %rtn))
 	destination => cwd(),
 	title => "Requests for ". $VHOST . ($SERVERNAME?" on $SERVERNAME":''),
 	vertical_label => "Count",
+        periods => [ qw(week) ],
 	interlaced => ""
 );
 printf("Created %s\n",join(", ",map { $rtn{$_}->[0] } keys %rtn))
