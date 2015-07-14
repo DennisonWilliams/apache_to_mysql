@@ -77,6 +77,8 @@ while (<STDIN>) {
   my ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params);
   if ($FORMAT eq 'combined') {
     ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params) = parse_combined($_);
+  } elsif ($FORMAT eq 'combined-ee') {
+    ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params) = parse_combined_ee($_);
   } elsif ($FORMAT eq 'combined-php') {
     ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params) = parse_combined_php($_);
   } elsif ($FORMAT eq 'combined-php-forensics') {
@@ -324,46 +326,54 @@ sub parse_combined_php {
 }
 
 # We will be using this log directive:
-# LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
-# 67.180.8.172 - - [02/Jul/2009:22:46:32 +0000] "GET / HTTP/1.1" 200 53 "-" "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.5; en-US; rv:1.9.0.11) Gecko/2009060214 Firefox/3.0.11"
+# LogFormat "%h %l %u %v %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
+# 50.116.20.205 - - teamsters856.org [16/Jun/2015:00:05:43 -0700] "GET / HTTP/1.1" 200 33340 "-" "WWW-Mechanize/1.71"
 # %h - Remote Host
 # %l - Remote logname (from identd, if supplied). This will return a dash unless mod_ident is present and IdentityCheck is set On.
 # %u - Remote user (from auth; may be bogus if return status (%s) is 401)
+# %v - Vhost name
 # %t - Time the request was received (standard english format)
 # "%r" - First line of request
 # %>s - Status. For requests that got internally redirected, this is the status of the *original* request --- %>s for the last.
 # %b - Size of response in bytes, excluding HTTP headers. In CLF format, i.e. a '-' rather than a 0 when no bytes are sent.
-# %D - The time taken to serve the request, in microseconds.
 # %{Referer}i - The Referer header from the client
 # %{User-Agent}i - The User-Agent header ffrom the client
-sub parse_combined {
+sub parse_combined_ee {
   my ($line) = @_;
   # pull in fields of interest from a RE
   $line =~ /
     ([^\s]+)				# %h - Remote Host
     \s
     (?:[^\s]+\s){2}			# %l %u
+    ([^\s]+)				# %v - VHost name
+    \s
     \[([^\]]+)\]			# %t - Time the request was recieved
     \s
-    "([^\"]+)"				# %r - First line of request
+    "\w+\s([^ ]+)\s[^"]+"				# %r - First line of request
     \s
     (?:[^\s]+)				# %>s - Status
     \s
     ([^\s]+)				# %b - Size of response
-  /x or next;
+  /x;
+
   $remote_host = $1;
-  $time = strftime "%F %H:%M:%S", localtime($lang->str2time($2));
+  $time = strftime "%F %H:%M:%S", localtime($lang->str2time($3));
   $memory = '';
   $tts = '';
-  $size = $4;
+  $size = $5;
   # TODO: this does not make a whole lot of sense
-  $servername = $SERVER;
-  $url = $3;
+  $servername = $2;
+  $url = $4;
   $params = '';
-  print "$_\n\$remote_host =>$remote_host\n\$time => $time\n".
-    "\$servername => $servername\n\$tts => $tts\n\$size => $size\n".
-    "\$url => $url\n\$params => $params\n\$memory => $memory\n\n"
-    if $VERBOSE;
+  if (!$remote_host || !$time) {
+    print "MATCH FAIL: ". $line;
+    return;
+  } else {
+    print "$_\n\$remote_host =>$remote_host\n\$time => $time\n".
+      "\$servername => $servername\n\$tts => $tts\n\$size => $size\n".
+      "\$url => $url\n\$params => $params\n\$memory => $memory\n\n"
+      if $VERBOSE;
+  }
   return ($remote_host, $time, $memory, $tts, $size, $servername, $url, $params);
 }
 
