@@ -9,7 +9,17 @@
 # CREATE DATABASE IF NOT EXISTS `apache` ;
 # GRANT ALL PRIVILEGES ON `apache` . * TO 'apache'@'localhost';
 
-# Update the apache configuration with the following configuraion
+# USAGE INSTRUCTIONS
+
+# Import a log file into the database.  Check against the different examples
+# below to see what log file formatr to specify in the --format argument
+# $ zcat all-domains*5*| \
+#   ./apache_to_mysql.pl --password='apache' \
+#   --format=combined-php-forensics-ee
+
+# mysql> select server_name,count(*) as ct from logentries where
+#   time>='2015-06-18 13:00' and time<='2015-06-18 14:00' group by server_name order
+
 use strict;
 use warnings;
 use DBI;
